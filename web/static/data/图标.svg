@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="400"
+   height="400"
+   viewBox="0 0 105.83333 105.83334"
+   version="1.1"
+   id="svg5"
+   inkscape:version="1.1 (c68e22c387, 2021-05-23)"
+   sodipodi:docname="图标.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview7"
+     pagecolor="#ffffff"
+     bordercolor="#111111"
+     borderopacity="1"
+     inkscape:pageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="1"
+     inkscape:document-units="mm"
+     showgrid="false"
+     units="px"
+     inkscape:zoom="0.73406285"
+     inkscape:cx="-71.519761"
+     inkscape:cy="561.94098"
+     inkscape:window-width="1920"
+     inkscape:window-height="1013"
+     inkscape:window-x="-9"
+     inkscape:window-y="-9"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs2">
+    <rect
+       x="28.607905"
+       y="53.128966"
+       width="396.42382"
+       height="464.53788"
+       id="rect3333" />
+    <rect
+       x="28.607904"
+       y="53.128967"
+       width="396.42383"
+       height="464.53787"
+       id="rect3333-3" />
+  </defs>
+  <g
+     inkscape:label="图层 1"
+     inkscape:groupmode="layer"
+     id="layer1">
+    <text
+       xml:space="preserve"
+       transform="matrix(0.26458333,0,0,0.26458333,0.72087375,-13.696602)"
+       id="text3331"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:173.333px;line-height:1.25;font-family:'Source Han Sans SC VF';-inkscape-font-specification:'Source Han Sans SC VF, @wght=400';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;font-variation-settings:'wght' 400;white-space:pre;shape-inside:url(#rect3333);fill:#000000;fill-opacity:1;stroke:none"><tspan
+         x="28.607422"
+         y="227.32856"
+         id="tspan15000">空气</tspan></text>
+    <text
+       xml:space="preserve"
+       transform="matrix(0.26458333,0,0,0.26458333,0.10165827,36.015595)"
+       id="text3331-6"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:173.333px;line-height:1.25;font-family:'Source Han Sans SC VF';-inkscape-font-specification:'Source Han Sans SC VF, @wght=400';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;font-variation-settings:'wght' 400;white-space:pre;shape-inside:url(#rect3333-3);fill:#000000;fill-opacity:1;stroke:none"><tspan
+         x="28.607422"
+         y="227.32856"
+         id="tspan15002">污染</tspan></text>
+  </g>
+</svg>

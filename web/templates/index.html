@@ -1,0 +1,2104 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>空气污染可视化</title>
+    <script src="../static/js/中华人民共和国.js" charset="utf-8"></script>
+    <script src="../static/js/城市.js" charset="utf-8"></script>
+    <script src="../static/js/wind/Windy.js" charset="utf-8"></script>
+    <script src="https://d3js.org/d3.v6.min.js" charset="utf-8"></script>
+    <script src="../static/jslib/echarts.min.js" charset="utf-8"></script>
+    <script src="../static/js/graph/graph.js"></script>
+    <script>
+        var analysis_graph=null;
+        function Clamp(x, min, max) {
+            return x > min? (x < max? x : max) : min;
+        };
+
+        const standard_pollution_colors = [[0, 255, 0], [255, 255, 0], [255, 126, 0], [255, 0, 0], [153, 0, 76], [126, 0, 35]];
+        const key_pairs = {'温度': 'TEMP', 'PM2.5': 'PM2_5', 'PM10': 'PM10', '二氧化硫': 'SO2', '二氧化氮': 'NO2', '一氧化碳': 'CO', '臭氧': 'O3', '相对湿度': 'RH', '地面气压': 'PSFC'};
+        const color_configurations = {
+            TEMP: [[218.15, [12, 0, 157], '-55℃'], [273.15, [74, 204, 64], '0℃'], [323.15, [204, 64, 64], '50℃']],
+            PM2_5: [
+                [17.5, standard_pollution_colors[0], '17.5μg/m³'],
+                [55, standard_pollution_colors[1], '55μg/m³'],
+                [95, standard_pollution_colors[2], '95μg/m³'],
+                [132.5, standard_pollution_colors[3], '132.5μg/m³'],
+                [200, standard_pollution_colors[4], '200μg/m³'],
+                [375, standard_pollution_colors[5], '375μg/m³']
+            ],
+            PM10: [
+                [25, standard_pollution_colors[0], '25μg/m³'],
+                [100, standard_pollution_colors[1], '100μg/m³'],
+                [200, standard_pollution_colors[2], '200μg/m³'],
+                [300, standard_pollution_colors[3], '300μg/m³'],
+                [385, standard_pollution_colors[4], '385μg/m³'],
+                [510, standard_pollution_colors[5], '510μg/m³']
+            ],
+            SO2: [
+                [25, standard_pollution_colors[0], '25μg/m³'],
+                [100, standard_pollution_colors[1], '100μg/m³'],
+                [312.5, standard_pollution_colors[2], '312.5μg/m³'],
+                [637.5, standard_pollution_colors[3], '637.5μg/m³'],
+                [1200, standard_pollution_colors[4], '1200μg/m³'],
+                [2110, standard_pollution_colors[5], '2110μg/m³']
+            ],
+            NO2: [
+                [20, standard_pollution_colors[0], '20μg/m³'],
+                [60, standard_pollution_colors[1], '60μg/m³'],
+                [130, standard_pollution_colors[2], '130μg/m³'],
+                [230, standard_pollution_colors[3], '230μg/m³'],
+                [422.2, standard_pollution_colors[4], '422.5μg/m³'],
+                [752.5, standard_pollution_colors[5], '752.5μg/m³']
+            ],
+            CO: [
+                [1, standard_pollution_colors[0], '1mg/m³'],
+                [3, standard_pollution_colors[1], '3mg/m³'],
+                [9, standard_pollution_colors[2], '9mg/m³'],
+                [19, standard_pollution_colors[3], '19mg/m³'],
+                [32, standard_pollution_colors[4], '32mg/m³'],
+                [48, standard_pollution_colors[5], '48mg/m³']
+            ],
+            O3: [
+                [80, standard_pollution_colors[0], '1μg/m³'],
+                [180, standard_pollution_colors[1], '3μg/m³'],
+                [250, standard_pollution_colors[2], '9μg/m³'],
+                [350, standard_pollution_colors[3], '19μg/m³'],
+                [600, standard_pollution_colors[4], '32μg/m³'],
+                [1000, standard_pollution_colors[5], '48μg/m³']
+            ],
+            RH: [
+                [0, [255, 0, 0], '0%'],
+                [100, [0, 0, 255], '100%']
+            ],
+            PSFC: [
+                [50000, [255, 255, 255], '50000Pa'],
+                [65000, [141, 67, 143], '65000Pa'],
+                [80000, [3, 12, 182], '80000Pa'],
+                [94000, [30, 163, 22], '94000Pa'],
+                [97000, [188, 159, 22], '97000Pa'],
+                [100000, [210, 0, 0], '100000Pa'],
+                [105400, [97, 31, 31], '105400Pa']
+            ]
+        };
+        let current_time = {year: 2013, month: 1, day: 1, hour: 0, type: 'daily'};
+
+        function NumberToColor(number, item) {
+            let f = function(x, x0, x1, y0, y1) {
+                return Clamp((y0 * (x1 - x) + y1 * (x - x0)) / (x1 - x0), 0, 255);
+            }
+            let g = function(cfg, n, number) {
+                if (number < cfg[0][0]) {
+                    return 'rgb(' + cfg[0][1][0] + ', ' + cfg[0][1][1] + ', ' + cfg[0][1][2] + ')';
+                }
+                for (let i = 1; i < n; i++) {
+                    if (number < cfg[i][0]) {
+                        return 'rgb(' + f(number, cfg[i - 1][0], cfg[i][0], cfg[i - 1][1][0], cfg[i][1][0]) + ', ' + f(number, cfg[i - 1][0], cfg[i][0], cfg[i - 1][1][1], cfg[i][1][1]) + ', ' + f(number, cfg[i - 1][0], cfg[i][0], cfg[i - 1][1][2], cfg[i][1][2]) + ')';
+                    }
+                }
+                return 'rgb(' + cfg[n - 1][1][0] + ', ' + cfg[n - 1][1][1] + ', ' + cfg[n - 1][1][2] + ')';
+            }
+            return g(color_configurations[item], color_configurations[item].length, number);
+        }
+        
+        function data_summary_by_time(lat, lon, ys, ms, ds, hs, ye, me, de, he, type,callback){
+              console.log(lat, lon, ys, ms, ds, hs, ye, me, de, he);
+              let request = new XMLHttpRequest();
+              request.open("POST", "/data_summary_by_time", true);
+              request.setRequestHeader("Content-type", "application/json");
+              request.setRequestHeader("kbn-version", "5.3.0");
+
+              request.send(JSON.stringify({
+                  "lat": lat,
+                  "lon": lon,
+                  "ys": ys,
+                  "ms": ms,
+                  "ds": ds,
+                  "hs": hs,
+                  "ye": ye,
+                  "me": me,
+                  "de": de,
+                  "he": he,
+                  "type": type
+              }));
+
+              request.onreadystatechange = function() {
+                  if (this.readyState == 4 && this.status == 200) {
+                      console.log('get data');
+                      var json_data=JSON.parse(request.responseText);
+                      json_data['date']=new Array();
+                      var start_ms=Date.UTC(parseInt(ys),parseInt(ms)-1,parseInt(ds));
+                      var end_ms=Date.UTC(parseInt(ye),parseInt(me)-1,parseInt(de));
+                      while(start_ms<=end_ms){
+                          var tmp_date=new Date();
+                          tmp_date.setTime(start_ms);
+                          var date_string=tmp_date.getFullYear().toString();
+                          if(tmp_date.getMonth()+1<10) date_string=date_string+'0'+(tmp_date.getMonth()+1).toString()
+                          else date_string=date_string+(tmp_date.getMonth()+1).toString()
+                          if(tmp_date.getDate()<10) date_string=date_string+'0'+tmp_date.getDate().toString()
+                          else date_string=date_string+tmp_date.getDate().toString()
+                          json_data['date'].push(date_string);
+                          start_ms+=1000*60*60*24;
+                      }
+                      callback(json_data);
+                  }
+             }
+        }
+
+        function FetchDataByMonth(month,lat,lon,callback){
+            console.log(month,lon,lat);
+            let request= new XMLHttpRequest();
+            request.open("POST", "/get_location_data", true);
+            request.setRequestHeader("Content-type", "application/json");
+            request.setRequestHeader("kbn-version", "5.3.0");
+
+            var params={
+                "month": month,
+                "lat": lat,
+                "lon": lon
+            }
+            request.send(JSON.stringify(params));
+            console.log("Request send!");
+
+            request.onreadystatechange  = function(){
+                if(this.readyState == 4 && this.status == 200){
+                    console.log("Successfully retrived!");
+                    var json_data=JSON.parse(request.responseText);
+                    json_data['date']=['2013'+month,'2014'+month,'2015'+month,'2016'+month,'2017'+month,'2018'+month];
+
+                    return callback(json_data);
+                }
+            };
+        }
+
+        function FetchDataByTime(time_type, time, keys, callback) {
+            let request = new XMLHttpRequest();
+            request.open("POST", "/request_info", true);
+            request.setRequestHeader("Content-type", "application/json");
+            request.setRequestHeader("kbn-version", "5.3.0");
+
+            request.send(JSON.stringify({
+                "keys": keys,
+                "time": time,
+                "type": time_type
+            }));
+
+            request.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    callback(JSON.parse(request.responseText));
+                }
+            }
+        }
+
+        function FetchDataByTimeAndCoordinates(time_type, time, keys, callback) {
+            let data = [];
+            let push_data_and_callback = function(raw_data) {
+                for (let index in raw_data['lat']) {
+                    let data_point = {};
+                    for (let key of keys.split('-')) {
+                        data_point[key] = raw_data[key][index];
+                    }
+                    data.push(data_point);
+                }
+                callback(data);
+            }
+            FetchDataByTime(time_type, time, keys, push_data_and_callback);
+        }
+
+        //创建图表类
+        class AnalysisGraph{
+            static graph_choice=1;    //对应关系：1堆叠折线图 2堆叠柱状图 3直方图
+            static month_choice="01";    //选择堆叠柱状图的1月-12月
+            static global_lat=18.34;
+            static global_lon=109.25;
+            static global_time_range=null;
+            div;
+            constructor(div){
+                this.div=div;
+                let graphs=d3.select(div).append("div")
+                          .attr("id","container")
+                          .style("position","absolute")
+                          .style("top",0)
+                          .style("left",0)
+                          .style("width",600+"px")
+                          .style("height",400+"px")
+                let graph_selection_list=d3.select(div).append("select")
+                                  .attr("id","graph_selection")
+                                  .style("z_index",100)
+                                  .style("background-color","Grey")
+                                  .style("color","White")
+                                  .style("position","absolute")
+                                  .style("top",0+"px")
+                                  .style("left",400+"px")
+                                  .style("width",65+"px")
+                                  .style("height",30+"px");
+                graph_selection_list.append("option")
+                                    .attr("value","line")
+                                    .html("折线图");
+                graph_selection_list.append("option")
+                                    .attr("value","rect")
+                                    .html("柱状图");
+                graph_selection_list.append("option")
+                                    .attr("value","histogram")
+                                    .html("直方图");
+                graph_selection_list.on('change',function(){
+                    if(this.value=="line") AnalysisGraph.graph_choice=1;
+                    else if(this.value=="rect"){
+                        clear_selection();
+                        AnalysisGraph.graph_choice=2;
+                        let month_selection_list=d3.select(div).append("select")
+                                                .attr("id","month_selection")
+                                                .style("background-color","Grey")
+                                                .style("color","White")
+                                                .style("position","absolute")
+                                                .style("top",0+"px")
+                                                .style("left",470+"px")
+                                                .style("width",65+"px")
+                                                .style("height",30+"px");
+                        month_selection_list.append('option')
+                                    .attr('value','01')
+                                    .html('1月');
+                        month_selection_list.append('option')
+                                    .attr('value','02')
+                                    .html('2月');
+                        month_selection_list.append('option')
+                                    .attr('value','03')
+                                    .html('3月');
+                        month_selection_list.append('option')
+                                    .attr('value','04')
+                                    .html('4月');
+                        month_selection_list.append('option')
+                                    .attr('value','05')
+                                    .html('5月');
+                        month_selection_list.append('option')
+                                    .attr('value','06')
+                                    .html('6月');
+                        month_selection_list.append('option')
+                                    .attr('value','07')
+                                    .html('7月');
+                        month_selection_list.append('option')
+                                    .attr('value','08')
+                                    .html('8月');
+                        month_selection_list.append('option')
+                                    .attr('value','09')
+                                    .html('9月');
+                        month_selection_list.append('option')
+                                    .attr('value','10')
+                                    .html('10月');
+                        month_selection_list.append('option')
+                                    .attr('value','11')
+                                    .html('11月');
+                        month_selection_list.append('option')
+                                    .attr('value','12')
+                                    .html('12月');
+
+                        month_selection_list.on('change',function(){
+                            AnalysisGraph.month_choice=this.value;
+                            analysis_graph.redraw_graph(AnalysisGraph.global_lon,AnalysisGraph.global_lat,AnalysisGraph.global_time_range);
+                        });
+                    } 
+                    else AnalysisGraph.graph_choice=3;
+                    analysis_graph.redraw_graph(AnalysisGraph.global_lon,AnalysisGraph.global_lat,AnalysisGraph.time_range);
+                });
+            }
+            redraw_graph(lon,lat,time_range){
+                if(lon!=null) AnalysisGraph.global_lon=lon;
+                if(lat!=null) AnalysisGraph.global_lat=lat;
+                if(time_range!=null) AnalysisGraph.global_time_range=time_range;
+                var start_month,ending_month,start_date,ending_date;
+
+                if(AnalysisGraph.global_time_range[0].getMonth()+1<10) start_month='0'+(AnalysisGraph.global_time_range[0].getMonth()+1).toString()
+                else start_month=(AnalysisGraph.global_time_range[0].getMonth()+1).toString();
+                if(AnalysisGraph.global_time_range[1].getMonth()+1<10) ending_month='0'+(AnalysisGraph.global_time_range[1].getMonth()+1).toString()
+                else ending_month=(AnalysisGraph.global_time_range[1].getMonth()+1).toString();
+
+                if(AnalysisGraph.global_time_range[0].getDate()<10) start_date='0'+AnalysisGraph.global_time_range[0].getDate().toString()
+                else start_date=AnalysisGraph.global_time_range[0].getDate().toString();
+                if(AnalysisGraph.global_time_range[1].getDate<10) ending_date='0'+AnalysisGraph.global_time_range[1].getDate().toString()
+                else ending_date=AnalysisGraph.global_time_range[1].getDate().toString();
+
+                if(AnalysisGraph.graph_choice==1)  data_summary_by_time(AnalysisGraph.global_lat,AnalysisGraph.global_lon,AnalysisGraph.global_time_range[0].getFullYear().toString(),start_month, start_date,'00',AnalysisGraph.global_time_range[1].getFullYear().toString(),ending_month,ending_date,'00','daily',Draw_stack_line);
+                else if(AnalysisGraph.graph_choice==2) FetchDataByMonth(AnalysisGraph.month_choice,AnalysisGraph.global_lat,AnalysisGraph.global_lon,Draw_stack_rect);
+                else if(AnalysisGraph.graph_choice==3) data_summary_by_time(AnalysisGraph.global_lat,AnalysisGraph.global_lon,AnalysisGraph.global_time_range[0].getFullYear().toString(),start_month, start_date,'00',AnalysisGraph.global_time_range[1].getFullYear().toString(),ending_month,ending_date,'00','daily',Draw_histogram)
+            }
+        }
+
+        class MainMap {
+            static font_size = 16;
+            div;
+
+            heatmap_with_border;
+            static HeatMapWithBorderClass = class HeatMapWithBorder {
+                static scale_coefficient = 0.002875;
+                static border_line_width = 1;
+                static city_dots_size = 2;
+                static city_kinds = ['一线城市', '新一线城市', '二线城市', '三线城市', '四线城市', '五线城市'];
+                static threshold = {'一线城市': 0, '新一线城市': 5, '二线城市': 8, '三线城市': 11, '四线城市': 14, '五线城市': 18};
+                div;
+                color_rectangles;
+                border_line;
+                city_labels;
+                city_dots;
+
+                wind_field;
+                static WindFieldClass = class WindField {
+                    div;
+                    wind_instance;
+
+                    constructor(div, data, projection, color) {
+                        this.div = div;
+                        let wind_canvas = d3.select(div).append('canvas').node();
+
+                        let windycanvas = wind_canvas;
+                        windycanvas.width = 864;
+                        windycanvas.height = 636;
+                        // 风场参数初始化
+                        let params = {
+                            extent: [73, 135, 18, 54],  // 绘制地图所用经纬度范围
+                            canvas: windycanvas,
+                            canvasWidth: 864,
+                            canvasHeight: 636,
+                            speedRate: 0.1,
+                            particlesNumber: 2000,
+                            maxAge: 120,
+                            frameRate: 10,
+                            color: color,
+                            lineWidth: 2,
+                        }
+                        // 根据经纬度和风速数据初始化网格
+                        init_speed(data);
+                        this.wind_instance = new CanvasWindy(
+                            data,
+                            params,
+                            projection
+                        );
+                    }
+
+                    update(data) {
+                        init_speed(data);
+                        draw_canvas(this.wind_instance, global_transform);
+                    }
+
+                    zoom_callback(t) {
+                        draw_canvas(this.wind_instance, t.transform);
+                    }
+
+                    delete() {  // 删除所有子节点
+                        while (this.div.firstChild) {
+                            this.div.removeChild(this.div.lastChild);
+                        }
+                    }
+                }
+
+                constructor(div, size, center, scale, data, key, point_click_callback, color) {
+                    this.div = div;
+                    div = d3.select(div);
+
+                    let heatmap_div = div.append('div')
+                        .style('position', 'absolute');
+                    let wind_div = div.append('div')
+                        .style('position', 'absolute')
+                        .style('pointer-events', 'none')
+                        // .style('opacity', 0.5)
+                        .node();
+                    let label_div = div.append('div')
+                        .style('position', 'absolute')
+                        .style('pointer-events', 'none');
+
+                    let svg = heatmap_div.append("svg")
+                        .attr("width", size.width + 'px')
+                        .attr("height", size.height + 'px');
+
+                    let label_svg = label_div.append('svg')
+                        .attr("width", size.width + 'px')
+                        .attr("height", size.height + 'px');
+
+                    let main_projection = d3.geoMercator()
+                        .center(center)  // 全国：[104, 38] 漠河：[122.5, 53.0] 海口：[110.3, 20.0]
+                        .scale(scale)  // 550
+                        .translate([size.width / 2, size.height / 2]);
+
+                    this.wind_field = new HeatMapWithBorder.WindFieldClass(wind_div, data, main_projection, color);
+
+                    this.color_rectangles = svg.append('g').attr('class', 'color_rectangles').node();
+                    d3.select(this.color_rectangles).selectAll('rect')  // 添加rect
+                        .data(data, d => {
+                            d.coordinates = main_projection([d['lon'], d['lat']]);
+                            d.rectangular_edge_length = scale * HeatMapWithBorder.scale_coefficient / Math.cos(d['lat'] / 180 * Math.PI);
+                            return d;
+                        })
+                        .enter()
+                        .append('rect')
+                        .style("fill", d => {
+                            return NumberToColor(d[key], key);
+                        })
+                        .attr("transform", d => {
+                            return 'translate(' + (d['coordinates'][0] - d['rectangular_edge_length'] / 2) + ', ' + (d['coordinates'][1] - d['rectangular_edge_length'] / 2) + ')';
+                        })
+                        .attr("width", d => d['rectangular_edge_length'] + 'px')
+                        .attr("height", d => d['rectangular_edge_length'] + 'px')
+                        .on('click', function(e, d) {
+                            point_click_callback(d['lon'], d['lat']);
+                        });
+
+                    let all_city_dots, all_city_labels;  // 添加国界、省界、城市
+                    this.city_labels = {};
+                    this.city_dots = {};
+
+                    let main_path = d3.geoPath().projection(main_projection);
+                    this.border_line = svg.append("g").attr('class', 'border_line').node();
+                    d3.select(this.border_line).append("path")
+                        .attr("d", main_path(border_line_data))
+                        .attr('fill', 'white')
+                        .attr('fill-rule', 'evenodd')
+                        .attr("stroke", "DarkGrey")
+                        .attr("stroke-width", HeatMapWithBorder.border_line_width)
+                        .attr('pointer-events', 'none');
+
+                    all_city_labels = label_svg.append('g').attr('class', 'city_labels');
+                    all_city_dots = label_svg.append('g').attr('class', 'city_dots');
+                    for (let city_kind in cities) {
+                        this.city_labels[city_kind] = all_city_labels.append('g').attr('class', city_kind).node();
+                        d3.select(this.city_labels[city_kind]).selectAll('text')
+                            .data(cities[city_kind], d => {
+                                d.coordinates = main_projection([d['lon'], d['lat']]);
+                                return d;
+                            })
+                            .enter()
+                            .append('text')
+                            .attr('font-size', MainMap.font_size + 'px')
+                            .text(d => d['name'])
+                            .attr("transform", d => 'translate(' + (d['coordinates'][0] + 4) + ', ' + (d['coordinates'][1] + 5) + ')');
+
+                        this.city_dots[city_kind] = all_city_dots.append('g').attr('class', city_kind).node();
+                        d3.select(this.city_dots[city_kind]).selectAll('circle')
+                            .data(cities[city_kind])
+                            .enter()
+                            .append('circle')
+                            .style('fill', 'black')
+                            .attr('r', HeatMapWithBorder.city_dots_size + 'px')
+                            .attr('cx', d => d['coordinates'][0] + 'px')
+                            .attr("cy", d => d['coordinates'][1] + 'px');
+                    }
+                    d3.select(this.city_labels['新一线城市']).attr('visibility', 'hidden');  // 隐藏大部分城市
+                    d3.select(this.city_labels['二线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_labels['三线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_labels['四线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_labels['五线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_dots['新一线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_dots['二线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_dots['三线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_dots['四线城市']).attr('visibility', 'hidden');
+                    d3.select(this.city_dots['五线城市']).attr('visibility', 'hidden');
+
+                    let self = this;
+                    svg.call(
+                        d3.zoom()
+                            .scaleExtent([0.7, 40])
+                            .on(
+                                "zoom",
+                                function(t) {
+                                    self.zoom(t, self);
+                                    self.wind_field.zoom_callback(t);
+                                }
+                            )
+                    );
+                }
+
+                zoom({transform}, self) {  // 设置缩放
+                    d3.select(self.border_line).attr('transform', transform)
+                        .selectAll('path')
+                        .style('stroke-width', HeatMapWithBorder.border_line_width / transform['k']);
+                    d3.select(self.color_rectangles).attr('transform', transform);
+                    for (let city_kind of HeatMapWithBorder.city_kinds) {
+                        if (transform['k'] > HeatMapWithBorder.threshold[city_kind]) {
+                            d3.select(self.city_dots[city_kind]).attr('transform', transform)
+                                .attr('visibility', null)
+                                .selectAll('circle')
+                                .attr('r', HeatMapWithBorder.city_dots_size / transform['k'] + 'px');
+                            d3.select(self.city_labels[city_kind]).attr('transform', transform)
+                                .attr('visibility', null)
+                                .selectAll('text')
+                                .attr('font-size', MainMap.font_size / transform['k'] + 'px')
+                                .attr("transform", d => {
+                                    return 'translate(' + (d['coordinates'][0] + (4) / transform['k']) + ', ' + (d['coordinates'][1] + (5) / transform['k']) + ')';
+                                });
+                        } else {
+                            d3.select(self.city_dots[city_kind]).attr('visibility', 'hidden');
+                            d3.select(self.city_labels[city_kind]).attr('visibility', 'hidden');
+                        }
+                    }
+                }
+
+                update(data, key) {  // 更新所有rect的颜色
+                    d3.select(this.color_rectangles).selectAll('rect')
+                        .data(data)
+                        .style("fill", d => {
+                            return NumberToColor(d[key], key);
+                        });
+                    this.wind_field.update(data);
+                }
+
+                delete() {  // 删除所有子节点
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            };
+
+            color_scale;
+            static ColorScaleClass = class ColorScale {
+                div;
+                current_key;
+                size;
+                constructor(div, key, size) {  // 添加颜色比例尺
+                    this.div = div;
+                    this.current_key = key;
+                    this.size = size;
+                    this.draw(key);
+                }
+
+                draw(key) {
+                    let cfg = color_configurations[key];
+                    let number_of_points = cfg.length;
+                    let scale_svg = d3.select(this.div).append('svg')
+                        .attr("width", this.size.width + 'px')
+                        .attr("height", this.size.height + 'px');
+                    let rectangle_svg = scale_svg.append('svg')
+                        .attr("width", this.size.width + 'px')
+                        .attr("height", this.size.height + 'px')
+                        .attr("x", (this.size.width - 20) + 'px')
+                        .attr("y", MainMap.font_size + 'px');
+                    let scale_defs = rectangle_svg.append('defs');
+                    let linear_gradient = scale_defs.append('linearGradient')
+                        .attr('id', 'grad1')
+                        .attr('x1', '0%')
+                        .attr('x2', '0%')
+                        .attr('y1', '100%')
+                        .attr('y2', '0%');
+                    for (let i = 0; i < number_of_points; i++) {
+                        linear_gradient.append('stop')
+                            .attr('offset', (100 / (number_of_points - 1) * i) + '%')
+                            .style('stop-color', 'rgb(' + cfg[i][1][0] + ', ' + cfg[i][1][1] + ', ' + cfg[i][1][2] + ')')
+                            .style('stop-opacity', 1);
+                        scale_svg.append('text')
+                            .attr('text-anchor', 'end')
+                            .attr('x', (this.size.width - 20 - 5) + 'px')
+                            .attr('y', this.size.height - (this.size.height - 2 * MainMap.font_size) / (number_of_points - 1) * i - MainMap.font_size / 2 + 'px')
+                            .html(cfg[i][2]);
+                    }
+                    rectangle_svg.append('rect')
+                        .attr('fill', "url(#grad1)")
+                        .attr('width', '20px')
+                        .attr('height', this.size.height - 2 * MainMap.font_size + 'px');
+                }
+
+                update(key) {
+                    this.delete();
+                    this.draw(key);
+                }
+
+                delete() {  // 删除所有子节点
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            }
+
+            constructor(div, size, center, scale, data, key, point_click_callback, color) {
+                this.div = div;
+                let body_div = d3.select(div).append('div').style('position', 'absolute').attr('class', 'body').node();
+
+                this.heatmap_with_border = new MainMap.HeatMapWithBorderClass(body_div, size, center, scale, data, key, point_click_callback, color);
+
+                let scale_size = {width: 120, height: 200};
+                let scale_div = d3.select(div)
+                    .append('div')
+                    .style('position', 'absolute')
+                    .attr('class', 'scale')
+                    .style('top', size.height - scale_size.height + 'px')
+                    .style('left', size.width - scale_size.width + 'px')
+                    .node();
+                this.color_scale = new MainMap.ColorScaleClass(scale_div, key, scale_size);
+            }
+
+            change_data(data, key) {
+                this.heatmap_with_border.update(data, key);
+                this.color_scale.update(key);
+            }
+
+            change_scale(key) {
+                this.color_scale.update(key);
+            }
+
+            delete() {
+                while (this.div.firstChild) {
+                    this.div.removeChild(this.div.lastChild);
+                }
+            }
+        }
+
+        class KeySwitch {
+            div;
+            current_key;
+            static selected_color = 'rgba(140, 140, 140, 0.7)';
+            static unselected_color = 'rgba(200, 200, 200, 0.5)';
+            constructor(div, font_size, key, key_switch_callback) {
+                this.div = div;
+                this.current_key = key;
+                const switch_size = {width: font_size * 4.5, height: font_size * 9 * 2};  // 添加切换按钮
+                let switch_div = d3.select(div);
+                let key_pairs_ordered = Object.keys(key_pairs);
+                for (let i = 0; i < key_pairs_ordered.length; i++) {
+                    let key_div = switch_div.append('div')
+                        .style('position', 'absolute')
+                        .style('width', font_size * 4.5 + 'px')
+                        .style('background-color', () => {
+                            if (key_pairs[key_pairs_ordered[i]] === key) {
+                                return KeySwitch.selected_color;
+                            } else {
+                                return KeySwitch.unselected_color;
+                            }
+                        })
+                        .style('top',  font_size * ( i * 2 + 1) + 'px')
+                        .html(key_pairs_ordered[i])
+                        .on("mouseover", function () {
+                            this.style.top = parseInt(this.style.top) - 3 + 'px';
+                            this.style.padding = '3px';
+                            this.style.cursor = 'pointer';
+                        })
+                        .on("mouseout", function () {
+                            this.style.top = parseInt(this.style.top) + 3 + 'px';
+                            this.style.padding = null;
+                            this.style.cursor = 'default';
+                        })
+                        .on("click", function () {
+                            if (this.style.backgroundColor === KeySwitch.unselected_color) {
+                                switch_div.selectAll('div').style('background-color', KeySwitch.unselected_color);
+                                this.style.backgroundColor = KeySwitch.selected_color;
+                                key_switch_callback([key_pairs[this.innerHTML], this.innerHTML]);
+                            }
+                        });
+                }
+            }
+
+            delete() {
+                while (this.div.firstChild) {
+                    this.div.removeChild(this.div.lastChild);
+                }
+            }
+        }
+
+        class TimeLine {
+            static multiFormat(date) {
+                let locale = d3.timeFormatLocale({
+                    dateTime: "%a %b %e %X %Y",
+                    date: "%Y/%-m/%-d",
+                    time: "%H:%M:%S",
+                    periods: ["上午", "下午"],
+                    days: ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"],
+                    shortDays: ["周日", "周一", "周二", "周三", "周四", "周五", "周六"],
+                    months: ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"],
+                    shortMonths: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+                });  // 自己构建一套显示格式，注意月份和星期都有全称和缩写，这有就是前文中%d和%D的区别。
+                let formatMillisecond = locale.format(".%L"),
+                    formatSecond = locale.format(":%S"),
+                    formatMinute = locale.format("%H:%M"),
+                    formatHour = locale.format("%H:00"),
+                    formatDay = locale.format("%a %d号"),
+                    formatWeek = locale.format("%b.%d"),
+                    formatMonth = locale.format("%B"),
+                    formatYear = locale.format("%Y");
+                return (d3.timeSecond(date) < date ? formatMillisecond
+                    : d3.timeMinute(date) < date ? formatSecond
+                    : d3.timeHour(date) < date ? formatMinute
+                    : d3.timeDay(date) < date ? formatHour
+                    : d3.timeMonth(date) < date ? (d3.timeWeek(date) < date ? formatDay : formatWeek)
+                    : d3.timeYear(date) < date ? formatMonth
+                    : formatYear)(date);
+            }
+
+            div;
+
+            select;
+            static SelectClass = class Select {
+                div;
+
+                constructor(div, OnChange) {
+                    this.div = div;
+
+                    let select = d3.select(div).append('select')
+                        .style('background-color', 'Grey')
+                        .style('color', 'White');
+                    select.append('option')
+                        .attr('value', 'daily')
+                        .html('日均值');
+                    select.append('option')
+                        .attr('value', 'hourly')
+                        .html('小时值');
+
+                    select.on('change', function() {
+                        OnChange(this.value);
+                    });
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            }
+
+            daily_axis;
+            static DailyAxisClass = class DailyAxis {
+                static margin = {top: 15, right: 15, middle: 30, bottom: 15, left: 15};
+                static width = 726;
+                static height = {all: 10, small: 15};
+                static begin_date = new Date(2013, 0, 1);
+                static end_date = new Date(2018, 11, 31);
+                div;
+                current_date = new Date(DailyAxis.begin_date);
+                update_cursor;
+                update_main_map;
+
+                constructor(div, text_div, update_main_map, new_time_range) {
+                    this.div = div;
+                    this.update_main_map = update_main_map;
+
+                    let time_scale = d3.scaleTime()
+                        .domain([DailyAxis.begin_date, DailyAxis.end_date])
+                        .rangeRound([0, DailyAxis.width]);
+                    let small_time_scale = d3.scaleTime()
+                        .domain([DailyAxis.begin_date, DailyAxis.end_date])
+                        .rangeRound([0, DailyAxis.width]);
+                    let svg = d3.select(div).append('svg')
+                        .attr('width', DailyAxis.margin.left + DailyAxis.width + DailyAxis.margin.right)
+                        .attr('height', DailyAxis.margin.top + DailyAxis.height['small'] + DailyAxis.margin.middle + DailyAxis.height['all'] + DailyAxis.margin.bottom);
+
+                    let main_axis = svg.append('g')
+                        .attr('transform', 'translate(0, ' + (DailyAxis.margin.top + DailyAxis.height['small'] + DailyAxis.margin.middle) + ')');
+                    main_axis.append('g')
+                        .attr('transform', 'translate(' + DailyAxis.margin.left + ', ' + DailyAxis.height['all'] + ')')
+                        .call(
+                            d3.axisBottom(time_scale)
+                            .tickSize(-DailyAxis.height['all'])
+                            .tickFormat(TimeLine.multiFormat)
+                        );
+                    main_axis.selectAll('.tick').selectAll('line').style('stroke', 'White');
+                    main_axis.select('.domain').attr('stroke', 'none').style('fill', 'rgb(200, 200, 200)');
+
+                    let small_axis_wrapper = svg.append('g');
+                    let small_axis = d3.axisBottom(small_time_scale).tickSize(8/*-DailyAxis.height['small']*/).tickFormat(TimeLine.multiFormat);
+                    let small_axis_area = small_axis_wrapper.append('g')
+                        .attr('transform', 'translate(' + DailyAxis.margin.left + ', ' + (DailyAxis.margin.top + DailyAxis.height['small']) + ')');
+
+                    let brush = d3.brushX()
+                        .extent([[0, 0], [DailyAxis.width, DailyAxis.height['all']]])
+                        .on('brush end', brushed);
+
+                    let zoom = d3.zoom()
+                        .scaleExtent([1, 40000])
+                        .translateExtent([[0, 0], [DailyAxis.width, DailyAxis.height['small']]])
+                        .extent([[0, 0], [DailyAxis.width, DailyAxis.height['small']]])
+                        .on("zoom", zoomed);
+
+                    let zoom_area = small_axis_wrapper.append("rect")
+                        .attr("width", DailyAxis.width)
+                        .attr("height", DailyAxis.height['small'])
+                        .style("fill", 'rgb(200, 200, 200)')
+                        .attr("pointer-events", "all")
+                        .attr("transform", 'translate(' + DailyAxis.margin.left + ', ' + DailyAxis.margin.top + ')');
+
+                    small_axis_wrapper.append('rect')
+                        .attr("width", DailyAxis.width)
+                        .attr("height", 15)
+                        .style("fill", 'none')
+                        .style("cursor", 'pointer')
+                        .attr("pointer-events", "all")
+                        .attr("transform", 'translate(' + DailyAxis.margin.left + ', ' + (DailyAxis.margin.top + DailyAxis.height['small']) + ')')
+                        .on('click', function(event) {
+                            self.current_date = d3.timeDay.floor(small_time_scale.invert(event.offsetX - DailyAxis.margin.left));
+                            self.update_cursor();
+                            update_main_map(self.current_date);
+                        });
+
+                    let cursor_shadow = main_axis.append('path')
+                        .attr("stroke", "Red")
+                        .attr("fill", "Red")
+                        .attr("opacity", 0.5)
+                        .attr("d", 'm 1 0 l -2 0 l 0 ' + DailyAxis.height['all'] + ' l 2 0 z');
+
+                    let brush_area = main_axis.append('g')
+                        .attr('transform', 'translate(' + DailyAxis.margin.left + ', 0)');
+
+                    brush_area.call(brush).call(brush.move, time_scale.range());
+
+                    let handle = brush_area.selectAll(".handle--custom")
+                        .data([{type: "w"}, {type: "e"}])
+                        .enter().append("circle")
+                        .attr("class", "handle--custom")
+                        .attr("stroke", "DarkGrey")
+                        .attr("stroke-width", "2")
+                        .attr("fill", "SteelBlue")
+                        .attr("cursor", "ew-resize")
+                        .attr("r", DailyAxis.height['all'] / 2 - 1);
+
+                    let cursor = small_axis_wrapper.append('path')
+                        .attr("stroke", "Red")
+                        .attr("fill", "Red")
+                        .attr("opacity", 0.5)
+                        .attr("cursor", "ew-resize")
+                        .attr("d", 'm 1 0 l -2 0 l 0 ' + DailyAxis.height['small'] + ' l -2 2 l 0 6 l 6 0 l 0 -6 l -2 -2 z');
+
+                    let cursor_drag = d3.drag()
+                        .on("drag", function(event) {
+                            self.current_date = Clamp(d3.timeDay.floor(small_time_scale.invert(event.x - DailyAxis.margin.left)), small_time_scale.domain()[0], small_time_scale.domain()[1]);
+                            self.update_cursor();
+                        })
+                        .on("end", function(event) {
+                            update_main_map(self.current_date);
+                        });
+
+                    let last_selection = time_scale.range();
+
+                    let self = this;
+
+                    this.update_cursor = function() {
+                        let domain = small_time_scale.domain();
+                        if (self.current_date >= domain[0] && self.current_date <= domain[1]) {
+                            cursor.attr('visibility', null)
+                                .attr("transform", "translate(" + (DailyAxis.margin.left + small_time_scale(self.current_date)) + ', ' + DailyAxis.margin.top + ")");
+                        } else {
+                            cursor.attr('visibility', 'hidden');
+                        }
+                        cursor_shadow.attr("transform", "translate(" + (DailyAxis.margin.left + time_scale(self.current_date)) + ", 0)");
+                        d3.select(text_div).html(self.current_date.getFullYear() + "." + (self.current_date.getMonth() + 1) + "." + self.current_date.getDate()/* + " " + self.current_date.getHours() + ":" + self.current_date.getMinutes()*/);
+                    };
+
+                    cursor_drag(cursor);
+                    update_axis([0, DailyAxis.width]);
+                    small_axis_area.select('.domain').attr('stroke', 'none');
+                    zoom_area.call(zoom);
+                    update_main_map(self.current_date);
+                    new_time_range([DailyAxis.begin_date, DailyAxis.end_date]);
+
+                    function update_axis(s) {
+                        small_axis_area.call(small_axis);
+                        small_axis_area.selectAll('.tick').selectAll('line').style('stroke', 'Black');
+                        brush_area.select('rect.selection').style('fill', 'SteelBlue');
+                        small_axis_wrapper.selectAll('text').attr('pointer-events', 'none');
+                        handle.attr("display", null).attr("transform", function(d, i) { return "translate(" + s[i] + ', ' + (DailyAxis.height['all'] / 2) + ")"; });
+                        self.update_cursor();
+                    }
+
+                    function brushed(event) {
+                        if (!event.sourceEvent || event.sourceEvent.type === "zoom") {  // ignore brush-by-zoom
+                            return;
+                        }
+                        let s = event.selection || last_selection;
+                        last_selection = s;
+                        brush_area.call(brush.move, s);
+                        small_time_scale.domain(s.map(time_scale.invert, time_scale));
+                        new_time_range(small_time_scale.domain());
+                        update_axis(s);
+                        zoom_area.call(
+                            zoom.transform,
+                            d3.zoomIdentity
+                                .scale(DailyAxis.width / (s[1] - s[0]))
+                                .translate(-s[0], 0)
+                        );
+                    }
+
+                    function zoomed(event) {
+                        if (!event.sourceEvent || event.sourceEvent.type === "brush") {  // Ignore zoom-by-brush
+                            return;
+                        }
+                        let t = event.transform;
+                        small_time_scale.domain(t.rescaleX(time_scale).domain());
+                        new_time_range(small_time_scale.domain());
+                        brush_area.call(brush.move, small_time_scale.range().map(t.invertX, t));
+                        last_selection = d3.brushSelection(brush_area.node());
+                        update_axis(last_selection);
+                    }
+                }
+
+                time_add_one() {
+                    if (this.current_date < DailyAxis.end_date) {
+                        this.current_date.setDate(this.current_date.getDate() + 1);
+                        this.update_cursor();
+                        this.update_main_map(this.current_date);
+                    }
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            }
+
+            hourly_axis;
+            static HourlyAxisClass = class HourlyAxis {
+                static margin = {top: 15, right: 15, middle: 30, bottom: 15, left: 15, lower_middle: 30};
+                static width = {all: 96, small: 726};
+                static height = {all: 10, small: 15};
+                static begin_date = [new Date(2013, 0, 1), new Date(2014, 0, 1), new Date(2015, 0, 1), new Date(2016, 0, 1), new Date(2017, 0, 1), new Date(2018, 0, 1)];
+                static end_date = [new Date(2013, 0, 31, 23), new Date(2014, 0, 31, 23), new Date(2015, 0, 31, 23), new Date(2016, 0, 31, 23), new Date(2017, 0, 31, 23), new Date(2018, 0, 31, 23)];
+                div;
+                current_date = new Date(HourlyAxis.begin_date[0]);
+                active_month_index = 0;
+                update_cursor;
+                update_main_map;
+
+                constructor(div, text_div, update_main_map, new_time_range) {
+                    this.div = div;
+                    this.update_main_map = update_main_map;
+
+                    let time_scales = [];
+                    for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                        time_scales.push(
+                            d3.scaleTime()
+                                .domain([HourlyAxis.begin_date[i], HourlyAxis.end_date[i]])
+                                .rangeRound([0, HourlyAxis.width['all']])
+                        );
+                    }
+                    let small_time_scale = d3.scaleTime()
+                        .domain([HourlyAxis.begin_date[0], HourlyAxis.end_date[0]])
+                        .rangeRound([0, HourlyAxis.width['small']]);
+                    let svg = d3.select(div).append('svg')
+                        .attr('width', HourlyAxis.margin.left + HourlyAxis.width['small'] + HourlyAxis.margin.right)
+                        .attr('height', HourlyAxis.margin.top + HourlyAxis.height['small'] + HourlyAxis.margin.middle + HourlyAxis.height['all'] + HourlyAxis.margin.bottom);
+
+                    let main_axes = [];
+                    for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                        main_axes.push(
+                            svg.append('g')
+                                .attr('transform', 'translate(' + (HourlyAxis.margin.left + i * (HourlyAxis.width['all'] + HourlyAxis.margin.lower_middle)) + ', ' + (HourlyAxis.margin.top + HourlyAxis.height['small'] + HourlyAxis.margin.middle) + ')')
+                        );
+                        main_axes[i].append('g')
+                            .attr('transform', 'translate(0, ' + HourlyAxis.height['all'] + ')')
+                            .call(
+                                d3.axisBottom(time_scales[i])
+                                    .ticks(1)
+                                    .tickSize(-HourlyAxis.height['all'])
+                                    .tickFormat(TimeLine.multiFormat)
+                            );
+                        main_axes[i].selectAll('.tick').selectAll('line').style('stroke', 'White');
+                        main_axes[i].select('.domain').attr('stroke', 'none').style('fill', 'rgb(200, 200, 200)');
+                    }
+
+                    let small_axis_wrapper = svg.append('g');
+                    let small_axis = d3.axisBottom(small_time_scale).tickSize(8).tickFormat(TimeLine.multiFormat);  // -HourlyAxis.height['small']
+                    let small_axis_area = small_axis_wrapper.append('g')
+                        .attr('transform', 'translate(' + HourlyAxis.margin.left + ', ' + (HourlyAxis.margin.top + HourlyAxis.height['small']) + ')');
+
+                    let brushes = [];
+                    for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                        brushes.push(
+                            d3.brushX()
+                            .extent([[0, 0], [HourlyAxis.width['all'], HourlyAxis.height['all']]])
+                            .on('brush end', function(event) {
+                                brushed(event, i);
+                            })
+                        );
+                    }
+
+                    let zoom = d3.zoom()
+                        .scaleExtent([1, 500])
+                        .translateExtent([[0, 0], [HourlyAxis.width['small'], HourlyAxis.height['small']]])
+                        .extent([[0, 0], [HourlyAxis.width['small'], HourlyAxis.height['small']]])
+                        .on("zoom", zoomed);
+
+                    let zoom_area = small_axis_wrapper.append("rect")
+                        .attr("width", HourlyAxis.width['small'])
+                        .attr("height", HourlyAxis.height['small'])
+                        .style("fill", 'rgb(200, 200, 200)')
+                        .attr("pointer-events", "all")
+                        .attr("transform", 'translate(' + HourlyAxis.margin.left + ', ' + HourlyAxis.margin.top + ')');
+
+                    small_axis_wrapper.append('rect')
+                        .attr("width", HourlyAxis.width['small'])
+                        .attr("height", 15)
+                        .style("fill", 'none')
+                        .style("cursor", 'pointer')
+                        .attr("pointer-events", "all")
+                        .attr("transform", 'translate(' + HourlyAxis.margin.left + ', ' + (HourlyAxis.margin.top + HourlyAxis.height['small']) + ')')
+                        .on('click', function(event) {
+                            self.current_date = d3.timeHour.floor(small_time_scale.invert(event.offsetX - HourlyAxis.margin.left));
+                            self.update_cursor();
+                            update_main_map(self.current_date);
+                        });
+
+                    let cursor_shadows = [];
+                    for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                        cursor_shadows.push(
+                            main_axes[i].append('path')
+                                .attr("stroke", "Red")
+                                .attr("fill", "Red")
+                                .attr("opacity", 0.5)
+                                .attr('visibility', 'hidden')
+                                .attr("d", 'm 1 0 l -2 0 l 0 ' + HourlyAxis.height['all'] + ' l 2 0 z')
+                        )
+                    }
+                    cursor_shadows[0].attr('visibility', null);
+
+                    let brush_area = [];
+                    for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                        brush_area.push(
+                            main_axes[i].append('g')
+                        );
+                        brush_area[i].call(brushes[i]);
+                    }
+
+                    brush_area[0].call(brushes[0].move, time_scales[0].range());
+
+                    let handle = svg.selectAll(".handle--custom")
+                        .data([{type: "w"}, {type: "e"}])
+                        .enter().append("circle")
+                        .attr("class", "handle--custom")
+                        .attr("stroke", "DarkGrey")
+                        .attr("stroke-width", "2")
+                        .attr("fill", "SteelBlue")
+                        .attr('pointer-events', 'none')
+                        .attr("r", HourlyAxis.height['all'] / 2 - 1);
+
+                    let cursor = small_axis_wrapper.append('path')
+                        .attr("stroke", "Red")
+                        .attr("fill", "Red")
+                        .attr("opacity", 0.5)
+                        .attr("cursor", "ew-resize")
+                        .attr("d", 'm 1 0 l -2 0 l 0 ' + HourlyAxis.height['small'] + ' l -2 2 l 0 6 l 6 0 l 0 -6 l -2 -2 z');
+
+                    let cursor_drag = d3.drag()
+                        .on("drag", function(event) {
+                            self.current_date = Clamp(d3.timeHour.floor(small_time_scale.invert(event.x - HourlyAxis.margin.left)), small_time_scale.domain()[0], small_time_scale.domain()[1]);
+                            self.update_cursor();
+                        })
+                        .on("end", function(event) {
+                            update_main_map(self.current_date);
+                        });
+
+                    let last_selection = time_scales[0].range();
+                    let last_active_month_index = 0;
+
+                    let self = this;
+
+                    this.update_cursor = function() {
+                        let domain = small_time_scale.domain();
+                        if (self.current_date >= domain[0] && self.current_date <= domain[1]) {
+                            cursor.attr('visibility', null)
+                                .attr("transform", "translate(" + (HourlyAxis.margin.left + small_time_scale(self.current_date)) + ', ' + HourlyAxis.margin.top + ")");
+                        } else {
+                            cursor.attr('visibility', 'hidden');
+                        }
+
+                        let active_month_index = self.current_date.getFullYear() - HourlyAxis.begin_date[0].getFullYear();
+                        for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                            if (i === active_month_index) {
+                                cursor_shadows[active_month_index].attr('visibility', null);
+                                cursor_shadows[active_month_index].attr("transform", "translate(" + time_scales[active_month_index](self.current_date) + ", 0)");
+                            } else {
+                                cursor_shadows[i].attr('visibility', 'hidden');
+                            }
+                        }
+
+                        d3.select(text_div).html(self.current_date.getFullYear() + "." + (self.current_date.getMonth()+1) + "." + self.current_date.getDate() + " " + self.current_date.getHours() + ":00");
+                    }
+
+                    cursor_drag(cursor);
+                    update_axis([0, HourlyAxis.width['all']], 0);
+                    small_axis_area.select('.domain').attr('stroke', 'none');
+                    zoom_area.call(zoom);
+                    update_main_map(self.current_date);
+                    new_time_range([HourlyAxis.begin_date[0], HourlyAxis.end_date[0]]);
+
+                    function update_axis(s, active_month_index) {
+                        small_axis_area.call(small_axis);
+                        small_axis_area.selectAll('.tick').selectAll('line').style('stroke', 'Black');
+                        brush_area[active_month_index].select('rect.selection').style('fill', 'SteelBlue');
+                        small_axis_wrapper.selectAll('text').attr('pointer-events', 'none');
+                        handle.attr("display", null).attr("transform", function(d, i) { return "translate(" + (HourlyAxis.margin.left + active_month_index * (HourlyAxis.width['all'] + HourlyAxis.margin.lower_middle) + s[i]) + ', ' + (HourlyAxis.margin.top + HourlyAxis.height['small'] + HourlyAxis.margin.middle + HourlyAxis.height['all'] / 2) + ")"; });
+                        self.update_cursor();
+                    }
+
+                    function brushed(event, active_month_index) {
+                        if (!event.sourceEvent || event.sourceEvent.type === "zoom") {  // ignore brush-by-zoom
+                            return;
+                        }
+                        let s;
+                        self.active_month_index = active_month_index;
+                        if (event.selection) {
+                            s = event.selection;
+                        } else {
+                            s = last_selection;
+                            active_month_index = last_active_month_index;
+                        }
+                        last_selection = s;
+                        last_active_month_index = active_month_index;
+                        for (let i = 0; i < HourlyAxis.begin_date.length; i++) {
+                            if (active_month_index === i) {
+                                brush_area[active_month_index].call(brushes[i].move, s);
+                            } else {
+                                brush_area[i].call(brushes[i].clear);
+                            }
+                        }
+                        
+                        small_time_scale.domain(s.map(time_scales[active_month_index].invert, time_scales[active_month_index]));
+                        new_time_range(small_time_scale.domain());
+                        update_axis(s, active_month_index);
+                        zoom_area.call(
+                            zoom.transform,
+                            d3.zoomIdentity
+                                .scale(HourlyAxis.width['all'] / (s[1] - s[0]))
+                                .translate(-s[0] / HourlyAxis.width['all'] * HourlyAxis.width['small'], 0)
+                        );
+                    }
+
+                    function zoomed(event) {
+                        if (!event.sourceEvent || event.sourceEvent.type === "brush") {  // Ignore zoom-by-brush
+                            return;
+                        }
+                        let t = event.transform;
+
+                        small_time_scale.domain(t.rescaleX(time_scales[self.active_month_index].copy().range([0, HourlyAxis.width['small']])).domain());
+                        new_time_range(small_time_scale.domain());
+                        brush_area[self.active_month_index].call(brushes[self.active_month_index].move, small_time_scale.range().map(t.invertX, t).map(x => x * HourlyAxis.width['all'] / HourlyAxis.width['small']));
+
+                        last_selection = d3.brushSelection(brush_area[self.active_month_index].node());
+                        update_axis(last_selection, self.active_month_index);
+                    }
+                }
+
+                time_add_one() {
+                    if (this.current_date < new Date(this.current_date.getFullYear(), 0, 31, 23)) {
+                        this.current_date.setTime(this.current_date.getTime() + 60 * 60 * 1000);
+                        this.update_cursor();
+                        this.update_main_map(this.current_date);
+                    }
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            }
+
+            play_button;
+            static PlayButtonClass = class PlayButton {
+                div;
+                play;
+                if_play;
+                button;
+                edge_length = 20;
+                time_add_one;
+
+                constructor(div, time_add_one, interval) {
+                    this.div = div;
+                    this.time_add_one = time_add_one;
+
+                    this.button = d3.select(div).append('button')
+                        .style('position', 'absolute')
+                        .style('top', 0)
+                        .style('left', 0)
+                        .style('border', 0)
+                        .style('background', 'transparent')
+                        .style('box-sizing', 'border-box')
+                        .style('width', this.edge_length + 'px')
+                        .style('height', this.edge_length + 'px')
+                        .style('border-color', 'transparent transparent transparent rgb(32, 32, 32)')
+                        .style('transition', '100ms all ease')
+                        .style('cursor', 'pointer')
+                        .style('border-style', 'solid')
+                        .style('border-width', this.edge_length /2 + 'px 0px ' + this.edge_length /2 + 'px ' + this.edge_length + 'px')
+                        .on('mouseover', function() {
+                            self.button.style('border-color', 'transparent transparent transparent rgb(96, 96, 96)');
+                        })
+                        .on('mouseout', function() {
+                            self.button.style('border-color', 'transparent transparent transparent rgb(32, 32, 32)');
+                        });
+
+                    let self = this;
+
+                    this.button.on('click', function() {
+                        if (self.if_play) {
+                            self.stop()
+                        } else {
+                            self.button.style('border-style', 'double')
+                                .style('border-width', '0px 0px 0px ' + self.edge_length + 'px');
+                            self.play = setInterval(self.time_add_one, interval);
+                            self.if_play = true;
+                        }
+                    });
+                }
+
+                stop() {
+                    if (this.if_play) {
+                        this.button.style('border-style', 'solid')
+                                .style('border-width', this.edge_length /2 + 'px 0px ' + this.edge_length /2 + 'px ' + this.edge_length + 'px');
+                        clearInterval(this.play);
+                        this.if_play = false;
+                    }
+                }
+
+                delete() {
+                    if (this.if_play) {
+                        clearInterval(this.play);
+                    }
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                }
+            }
+
+            constructor(div, update_main_map, interval, new_time_range) {
+                this.div = div;
+                let self = this;
+                let text_div = d3.select(div)
+                    .append('div')
+                    .style('position', 'absolute')
+                    .style('top', 60 + 'px')
+                    .style('width', 120 + 'px')
+                    .style('text-align', 'center')
+                    .node();
+                let axis_div = d3.select(div)
+                    .append('div')
+                    .style('position', 'absolute')
+                    .style('left', 125 + 'px')
+                    .node();
+                this.select = new TimeLine.SelectClass(
+                    d3.select(div)
+                        .append('div')
+                        .style('position', 'absolute')
+                        .style('top', 20 + 'px')
+                        .style('left', 16 + 'px')
+                        .node(),
+                    function(value) {
+                        if (value === 'hourly') {
+                            self.play_button.stop();
+                            self.daily_axis.delete();
+                            self.hourly_axis = new TimeLine.HourlyAxisClass(
+                                axis_div,
+                                text_div,
+                                function(date) {
+                                    update_main_map(d3.timeFormat("%Y%m%d%H")(date), 'hourly');
+                                },
+                                function(new_range) {
+                                    new_time_range(new_range, 'hourly');
+                                }
+                            );
+                            self.play_button.time_add_one = self.hourly_axis.time_add_one.bind(self.hourly_axis);
+                        } else {
+                            self.play_button.stop();
+                            self.hourly_axis.delete();
+                            self.daily_axis = new TimeLine.DailyAxisClass(
+                                axis_div,
+                                text_div,
+                                function(date) {
+                                    update_main_map(d3.timeFormat("%Y%m%d00")(date), 'daily');
+                                },
+                                function(new_range) {
+                                    new_time_range(new_range, 'daily');
+                                }
+                            );
+                            self.play_button.time_add_one = self.daily_axis.time_add_one.bind(self.daily_axis);
+                        }
+                    }
+                );
+                this.daily_axis = new TimeLine.DailyAxisClass(
+                    axis_div,
+                    text_div,
+                    function(date) {
+                        update_main_map(d3.timeFormat("%Y%m%d00")(date), 'daily');
+                    },
+                    function(new_range) {
+                        new_time_range(new_range, 'daily');
+                    }
+                );
+                this.play_button = new TimeLine.PlayButtonClass(
+                    d3.select(div)
+                    .append('div')
+                    .style('position', 'absolute')
+                    .style('top', 20 + 'px')
+                    .style('left', 101 + 'px')
+                    .node(),
+                    this.daily_axis.time_add_one.bind(this.daily_axis),
+                    interval
+                );
+            }
+
+            delete() {
+                while (this.div.firstChild) {
+                    this.div.removeChild(this.div.lastChild);
+                }
+            }
+        }
+
+        function FetchDataByLocationAndKey(location, key, time_type, time, callback) {  // 好像没什么用了
+            let request = new XMLHttpRequest();
+            request.open("POST", "/data_summary_by_time", true);
+            request.setRequestHeader("Content-type", "application/json");
+            request.setRequestHeader("kbn-version", "5.3.0");
+
+            if (time_type === 'daily') {
+                request.send(JSON.stringify({"lat": location['lat'], "lon": location['lon'], "key": key, "ys": '2013', "ms": '01', "ds": '01', "hs": '00', "ye": '2018', "me": '12', "de": '31', "he": '00', "type": 'daily'}));
+            } else {
+            }
+
+            request.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    callback(JSON.parse(request.responseText));
+                }
+            }
+        }
+
+        class NumericalAnalysis {  
+            static BackEndAPI = class {
+                /*模块1.1：数据画像(指定地点)*/
+                /*输入：（任意指定相同属性(KEY)的一维数据，不生效的参数可随意传递，但不能漏掉）
+                        经度纬度，时间区间，变量名称，
+                        type:   =daily表示使用每日平均
+                                =hourly表示使用每小时平均*/
+                /*输出：最大值，最小值，均值，方差，如果需要画图可增加预处理*/
+                static data_summary_by_time(lat, lon, key, ys, ms, ds, hs, ye, me, de, he, type, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/data_summary_by_time", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat": lat, "lon": lon, "key": key, "ys": ys, "ms": ms, "ds": ds, "hs": hs, "ye": ye, "me": me, "de": de, "he": he, "type": type}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块1.2：数据画像(指定时刻)*/
+                /*输入：（任意指定相同属性(KEY)的一维数据，不生效的参数可随意传递，但不能漏掉）
+                        经度纬度，时间区间，变量名称，
+                        type:   =daily表示使用每日平均
+                                =hourly表示使用每小时平均*/
+                /*输出：最大值，最小值，均值，方差，如果需要画图可增加预处理*/
+                static data_summary_by_location(key, y, m, d, h, type, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/data_summary_by_location", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"key": key, "y": y, "m": m, "d": d, "h": h, "type": type}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块2.1：单参数检验（用于评判政策是否达到目标（例如PM2.5小于10））*/
+                /*输入：任意指定相同属性(KEY)的一维数据，以及一个浮点数value，一个置信度alpha，一般为0.05*/
+                static parametric_test_one_sample(lat, lon, key, ys, ms, ds, hs, ye, me, de, he, type, value, alpha, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/parametric_test_one_sample", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat": lat, "lon": lon, "key": key, "ys": ys, "ms": ms, "ds": ds, "hs": hs, "ye": ye, "me": me, "de": de, "he": he, "type": type, "value": value, "alpha": alpha}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块2.2：指定地点不同时间的参数检验*/
+                /*输入：任意指定相同属性(KEY)的一维数据,同时选择两个不同时间段，以及一个置信度alpha，一般为0.05*/
+                static parametric_test_by_time(lat, lon, key, ys1, ms1, ds1, hs1, ye1, me1, de1, he1, ys2, ms2, ds2, hs2, ye2, me2, de2, he2, type, alpha, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/parametric_test_by_time", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat": lat, "lon": lon, "key": key, "ys1": ys1, "ms1": ms1, "ds1": ds1, "hs1": hs1, "ye1": ye1, "me1": me1, "de1": de1, "he1": he1, "ys2": ys2, "ms2": ms2, "ds2": ds2, "hs2": hs2, "ye2": ye2, "me2": me2, "de2": de2, "he2": he2, "type": type, "alpha": alpha}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块2.3：指定时间不同地点的参数检验*/
+                /*输入：任意指定相同属性(KEY)的一维数据，以及一个浮点数value，一个置信度alpha，一般为0.05*/
+                static parametric_test_by_location(lat1, lon1, lat2, lon2, key, ys, ms, ds, hs, ye, me, de, he, type, alpha, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/parametric_test_by_location", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat1": lat1, "lon1": lon1, "lat2": lat2, "lon2": lon2, "key": key, "ys": ys, "ms": ms, "ds": ds, "hs": hs, "ye": ye, "me": me, "de": de, "he": he, "type": type, "alpha": alpha}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块3：多元回归*/
+                /*输入：指定时间段，地点，以及一个应变量与至少一个自变量，这里的key允许多个，-分隔开*/
+                static liner_regression(lat, lon, key, dep, ys, ms, ds, hs, ye, me, de, he, type, callback) {
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/liner_regression", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat": lat, "lon": lon, "key": key, "dep": dep, "ys": ys, "ms": ms, "ds": ds, "hs": hs, "ye": ye, "me": me, "de": de, "he": he, "type": type,
+                    }));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+                /*模块4：时间序列分析TBD*/
+                /*输入：指定时间段，地点，*/
+                /*输出：一组中心化的移动平均序列，可直接作图，数据有限，直接选全部数据*/
+                static time_series(lat, lon, key, callback){
+                    let request = new XMLHttpRequest();
+                    request.open("POST", "/time_series", true);
+                    request.setRequestHeader("Content-type", "application/json");
+                    request.setRequestHeader("kbn-version", "5.3.0");
+
+                    request.send(JSON.stringify({"lat": lat, "lon": lon, "key": key,}));
+
+                    request.onreadystatechange = function() {
+                        if (this.readyState == 4 && this.status == 200) {
+                            callback(JSON.parse(request.responseText));
+                        }
+                    }
+                }
+
+            }
+
+            static pollutions = [['PM2.5', 'PM2_5'], ['PM10', 'PM10'], ['二氧化硫', 'SO2'], ['二氧化氮', 'NO2'], ['一氧化碳', 'CO'], ['臭氧', 'O3']]
+
+            static PollutionStandardClass = class PollutionStandard {
+                static type = '污染物预期标准验证';
+                div;
+                time_range;
+                time_type;
+                time_range_span;
+                location;
+                location_span;
+                key_select;
+                standard_input;
+                confirm_button;
+                result;
+
+                constructor(div, time_range, time_type, location) {
+                    this.div = div;
+                    let D3_div = d3.select(div);
+
+                    this.time_range_span = D3_div.append('span').node();
+                    this.update_time_range(time_range, time_type);
+                    this.location_span = d3.select(div).append('span').node();
+                    this.update_location(location);
+                    div.append('设置');
+                    this.key_select = D3_div.append('select').node();
+                    for (let pollution of NumericalAnalysis.pollutions) {
+                        d3.select(this.key_select)
+                            .append('option')
+                            .attr('value', pollution[1])
+                            .html(pollution[0]);
+                    }
+                    div.append('的预期标准：');
+                    this.standard_input = d3.select(div).append('input').attr('type', 'number').style('width', 100 + 'px').node();
+                    let self = this;
+                    this.confirm_button = d3.select(div)
+                        .append('button')
+                        .style('background-color', 'transparent')
+                        .style('border-width', 1 + 'px')
+                        .html('确认')
+                        .on('click', function() {
+                            self.compute();
+                        })
+                        .on('mouseover', function() {
+                            this.style.backgroundColor = 'rgba(140, 140, 140, 0.5)';
+                            this.style.cursor = 'pointer';
+                        })
+                        .on('mouseout', function() {
+                            this.style.backgroundColor = 'transparent';
+                            this.style.cursor = 'default';
+                        })
+                        .node();
+                    this.result = D3_div.append('span').node();
+                }
+
+                update_time_range(new_range, time_type) {
+                    this.time_range = new_range;
+                    this.time_type = time_type;
+                    this.time_range_span.innerHTML = '在' + this.time_range[0].getFullYear() + '年' + (this.time_range[0].getMonth() + 1) + '月' + this.time_range[0].getDate() +'日' + (time_type === 'hourly'? new_range[0].getHours() + '时' : '') + '到' + this.time_range[1].getFullYear() + '年' + (this.time_range[1].getMonth() + 1) + '月' + this.time_range[1].getDate() +'日' + (time_type === 'hourly'? new_range[1].getHours() + '时<br>' : '<br>');
+                }
+
+                update_location(location) {
+                    this.location = location;
+                    this.location_span.innerHTML = '在东经' + location['lon'] + '度, 北纬' + location['lat'] + '度<br>';
+                }
+
+                compute() {
+                    if (this.standard_input.value == '') {
+                        alert('未输入数字');
+                    } else if (new Date(this.time_range[0].getFullYear(), this.time_range[0].getMonth(), this.time_range[0].getDate(), this.time_range[0].getHours()) < new Date(this.time_range[1].getFullYear(), this.time_range[1].getMonth(), this.time_range[1].getDate(), this.time_range[1].getHours())) {
+                        NumericalAnalysis.BackEndAPI.parametric_test_one_sample(this.location['lat'], this.location['lon'], this.key_select.value, this.time_range[0].getFullYear().toString(), ('0' + (this.time_range[0].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[0].getDate().toString()).slice(-2), ('0' + this.time_range[0].getHours().toString()).slice(-2), this.time_range[1].getFullYear().toString(), ('0' + (this.time_range[1].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[1].getDate().toString()).slice(-2), ('0' + this.time_range[1].getHours().toString()).slice(-2), this.time_type, parseFloat(this.standard_input.value), 0.05, this.update_result.bind(this));
+                    } else {
+                        alert('时间范围无效');
+                    }
+                }
+
+                update_result(result) {
+                    console.log(PollutionStandard.type + '结果');
+                    if (result['pvalue'] > result['alpha']) {
+                        this.result.innerHTML = '<br>不能得到明显结论';
+                    } else {
+                        if (result["valuestatistic"] < 0) {
+                            this.result.innerHTML = '<br>污染物浓度<span style="color: green">符合</span>标准(P值为' + result['pvalue'].toFixed(2) + ')';
+                        } else {
+                            this.result.innerHTML = '<br>污染物浓度<span style="color: red">超出</span>标准(P值为' + result['pvalue'].toFixed(2) + ')';
+                        }
+                    }
+                    d3.select(this.result)
+                        .style('background-color', 'rgb(200, 200, 200)')
+                        .transition()
+                        .style('background-color', null);
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                    this.div.innerHTML = null;
+                }
+            }
+
+            static PollutionComparisonClass = class PollutionComparison {
+                static type = '污染物比较分析';
+                div;
+                time_range;
+                time_type;
+                time_range_span;
+                location = [undefined, undefined];
+                location_span = [undefined, undefined];
+                current_location_index;
+                key_select;
+                confirm_button;
+                result;
+
+                constructor(div, time_range, time_type, location) {
+                    this.div = div;
+                    let D3_div = d3.select(div);
+
+                    this.time_range_span = D3_div.append('span').node();
+                    this.update_time_range(time_range, time_type);
+                    div.append('比较');
+                    this.key_select = D3_div.append('select').node();
+                    for (let pollution of NumericalAnalysis.pollutions) {
+                        d3.select(this.key_select)
+                            .append('option')
+                            .attr('value', pollution[1])
+                            .html(pollution[0]);
+                    }
+                    div.append('在');
+                    this.current_location_index = 0;
+                    this.location_span[this.current_location_index] = d3.select(div).append('span').node();
+                    this.update_location(location[this.current_location_index]);
+                    let self = this;
+                    d3.select(this.location_span[this.current_location_index])
+                        .on('click', function() {
+                            self.location_span[1].style.backgroundColor = null;
+                            d3.select(this).style('background-color', 'rgb(140, 140, 140)');
+                            self.current_location_index = 0;
+                        });
+                    div.append('和');
+                    this.current_location_index = 1;
+                    this.location_span[this.current_location_index] = d3.select(div).append('span').node();
+                    this.update_location(location[this.current_location_index]);
+                    d3.select(this.location_span[this.current_location_index])
+                        .on('click', function() {
+                            self.location_span[0].style.backgroundColor = null;
+                            d3.select(this).style('background-color', 'rgb(140, 140, 140)');
+                            self.current_location_index = 1;
+                        });
+                    div.append('的情况：');
+                    this.confirm_button = d3.select(div)
+                        .append('button')
+                        .style('background-color', 'transparent')
+                        .style('border-width', 1 + 'px')
+                        .html('确认')
+                        .on('click', function() {
+                            self.compute();
+                        })
+                        .on('mouseover', function() {
+                            this.style.backgroundColor = 'rgba(140, 140, 140, 0.5)';
+                            this.style.cursor = 'pointer';
+                        })
+                        .on('mouseout', function() {
+                            this.style.backgroundColor = 'transparent';
+                            this.style.cursor = 'default';
+                        })
+                        .node();
+                    this.result = D3_div.append('span').node();
+                }
+
+                update_time_range(new_range, time_type) {
+                    this.time_range = new_range;
+                    this.time_type = time_type;
+                    this.time_range_span.innerHTML = '在' + this.time_range[0].getFullYear() + '年' + (this.time_range[0].getMonth() + 1) + '月' + this.time_range[0].getDate() +'日' + (time_type === 'hourly'? new_range[0].getHours() + '时' : '') + '到' + this.time_range[1].getFullYear() + '年' + (this.time_range[1].getMonth() + 1) + '月' + this.time_range[1].getDate() +'日' + (time_type === 'hourly'? new_range[1].getHours() + '时<br>' : '<br>');
+                }
+
+                update_location(location) {
+                    this.location[this.current_location_index] = location;
+                    this.location_span[this.current_location_index].innerHTML = '东经' + location['lon'] + '度, 北纬' + location['lat'] + '度';
+                }
+
+                compute() {
+                    this.location_span[1].style.backgroundColor = null;
+                    this.location_span[0].style.backgroundColor = null;
+                    if (this.location[0].lon === this.location[1].lon && this.location[0].lat === this.location[1].lat) {
+                        alert('地点无效');
+                    } else if (new Date(this.time_range[0].getFullYear(), this.time_range[0].getMonth(), this.time_range[0].getDate(), this.time_range[0].getHours()) < new Date(this.time_range[1].getFullYear(), this.time_range[1].getMonth(), this.time_range[1].getDate(), this.time_range[1].getHours())) {
+                        NumericalAnalysis.BackEndAPI.parametric_test_by_location(this.location[0]['lat'], this.location[0]['lon'], this.location[1]['lat'], this.location[1]['lon'], this.key_select.value, this.time_range[0].getFullYear().toString(), ('0' + (this.time_range[0].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[0].getDate().toString()).slice(-2), ('0' + this.time_range[0].getHours().toString()).slice(-2), this.time_range[1].getFullYear().toString(), ('0' + (this.time_range[1].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[1].getDate().toString()).slice(-2), ('0' + this.time_range[1].getHours().toString()).slice(-2), this.time_type, 0.05, this.update_result.bind(this));
+                    } else {
+                        alert('时间范围无效');
+                    }
+                }
+
+                update_result(result) {
+                    console.log(PollutionComparison.type + '结果');
+                    if (result['pvalue'] > result['alpha']) {
+                        this.result.innerHTML = '<br>不能得到明显结论';
+                    } else {
+                        this.result.innerHTML = '<br>总体上来看，' + '东经' + this.location[0]['lon'] + '度, 北纬' + this.location[0]['lat'] + '度处的' + this.key_select.options[this.key_select.selectedIndex].text + (result["valuestatistic"] < 0? '<span style="color: Green">低于</span>' : '<span style="color: Red">高于</span>') + '东经' + this.location[1]['lon'] + '度, 北纬' + this.location[1]['lat'] + '度处(P值为' + result['pvalue'].toFixed(2) + ')';
+                    }
+                    d3.select(this.result)
+                        .style('background-color', 'rgb(200, 200, 200)')
+                        .transition()
+                        .style('background-color', null);
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                    this.div.innerHTML = null;
+                }
+            }
+
+            static PollutionImprovementClass = class PollutionImprovement {
+                static type = '污染改善分析';
+                div;
+                time_range = [undefined, undefined];
+                time_type = [undefined, undefined];
+                time_range_span = [undefined, undefined];
+                current_time_range_index;
+                location;
+                location_span;
+                key_select;
+                confirm_button;
+                result;
+
+                constructor(div, time_range, time_type, location) {
+                    this.div = div;
+                    let D3_div = d3.select(div);
+
+                    this.location_span = d3.select(div).append('span').node();
+                    this.update_location(location);
+                    this.div.append('对');
+                    this.key_select = D3_div.append('select').node();
+                    for (let pollution of NumericalAnalysis.pollutions) {
+                        d3.select(this.key_select)
+                            .append('option')
+                            .attr('value', pollution[1])
+                            .html(pollution[0]);
+                    }
+                    this.div.append('在');
+                    this.current_time_range_index = 0;
+                    this.time_range_span[this.current_time_range_index] = D3_div.append('span').node();
+                    this.update_time_range(time_range[0], time_type[0]);
+                    let self = this;
+                    d3.select(this.time_range_span[this.current_time_range_index])
+                        .on('click', function() {
+                            self.time_range_span[1].style.backgroundColor = null;
+                            d3.select(this).style('background-color', 'rgb(140, 140, 140)');
+                            self.current_time_range_index = 0;
+                        });
+                    div.append('和');
+                    this.current_time_range_index = 1;
+                    this.time_range_span[this.current_time_range_index] = D3_div.append('span').node();
+                    this.update_time_range(time_range[1], time_type[1]);
+                    d3.select(this.time_range_span[this.current_time_range_index])
+                        .on('click', function() {
+                            self.time_range_span[0].style.backgroundColor = null;
+                            d3.select(this).style('background-color', 'rgb(140, 140, 140)');
+                            self.current_time_range_index = 1;
+                        });
+                    div.append('的情况进行分析：');
+                    this.confirm_button = d3.select(div)
+                        .append('button')
+                        .style('background-color', 'transparent')
+                        .style('border-width', 1 + 'px')
+                        .html('确认')
+                        .on('click', function() {
+                            self.compute();
+                        })
+                        .on('mouseover', function() {
+                            this.style.backgroundColor = 'rgba(140, 140, 140, 0.5)';
+                            this.style.cursor = 'pointer';
+                        })
+                        .on('mouseout', function() {
+                            this.style.backgroundColor = 'transparent';
+                            this.style.cursor = 'default';
+                        })
+                        .node();
+                    this.result = D3_div.append('span').node();
+                }
+
+                update_time_range(new_range, time_type) {
+                    this.time_range[this.current_time_range_index] = new_range;
+                    this.time_type[this.current_time_range_index] = time_type;
+                    this.time_range_span[this.current_time_range_index].innerHTML = new_range[0].getFullYear() + '年' + (new_range[0].getMonth() + 1) + '月' + new_range[0].getDate() +'日' + (time_type === 'hourly'? new_range[0].getHours() + '时' : '') + '到' + new_range[1].getFullYear() + '年' + (new_range[1].getMonth() + 1) + '月' + new_range[1].getDate() +'日' + (time_type === 'hourly'? new_range[1].getHours() + '时' : '');
+                }
+
+                update_location(location) {
+                    this.location = location;
+                    this.location_span.innerHTML = '在东经' + location['lon'] + '度, 北纬' + location['lat'] + '度<br>';
+                }
+
+                compute() {
+                    this.time_range_span[1].style.backgroundColor = null;
+                    this.time_range_span[0].style.backgroundColor = null;
+                    if (this.time_type[0] !== this.time_type[1]) {
+                        alert('时间类型不同');
+                    } else if (new Date(this.time_range[0][0].getFullYear(), this.time_range[0][0].getMonth(), this.time_range[0][0].getDate(), this.time_range[0][0].getHours()) < new Date(this.time_range[0][1].getFullYear(), this.time_range[0][1].getMonth(), this.time_range[0][1].getDate(), this.time_range[0][1].getHours()) && new Date(this.time_range[1][0].getFullYear(), this.time_range[1][0].getMonth(), this.time_range[1][0].getDate(), this.time_range[1][0].getHours()) < new Date(this.time_range[1][1].getFullYear(), this.time_range[1][1].getMonth(), this.time_range[1][1].getDate(), this.time_range[1][1].getHours())) {
+                        NumericalAnalysis.BackEndAPI.parametric_test_by_time(this.location['lat'], this.location['lon'], this.key_select.value, this.time_range[0][0].getFullYear().toString(), ('0' + (this.time_range[0][0].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[0][0].getDate().toString()).slice(-2), ('0' + this.time_range[0][0].getHours().toString()).slice(-2), this.time_range[0][1].getFullYear().toString(), ('0' + (this.time_range[0][1].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[0][1].getDate().toString()).slice(-2), ('0' + this.time_range[0][1].getHours().toString()).slice(-2), this.time_range[1][0].getFullYear().toString(), ('0' + (this.time_range[1][0].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[1][0].getDate().toString()).slice(-2), ('0' + this.time_range[1][0].getHours().toString()).slice(-2), this.time_range[1][1].getFullYear().toString(), ('0' + (this.time_range[1][1].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[1][1].getDate().toString()).slice(-2), ('0' + this.time_range[1][1].getHours().toString()).slice(-2), this.time_type[0], 0.05, this.update_result.bind(this));
+                    } else {
+                        alert('时间范围无效');
+                    }
+                }
+
+                update_result(result) {
+                    console.log(PollutionImprovement.type + '结果');
+                    if (result['pvalue'] > result['alpha']) {
+                        this.result.innerHTML = '<br>不能得到明显结论';
+                    } else {
+                        this.result.innerHTML = '<br>总体上来看，' + this.time_range[0][0].getFullYear() + '年' + (this.time_range[0][0].getMonth() + 1) + '月' + this.time_range[0][0].getDate() +'日' + (this.time_type[0] === 'hourly'? new_range[0][0].getHours() + '时' : '') + '到' + this.time_range[0][1].getFullYear() + '年' + (this.time_range[0][1].getMonth() + 1) + '月' + this.time_range[0][1].getDate() +'日' + (this.time_type[0] === 'hourly'? new_range[0][1].getHours() + '时' : '') + '的' + this.key_select.options[this.key_select.selectedIndex].text + (result["valuestatistic"] < 0? '<span style="color: Green">低于</span>' : '<span style="color: Red">高于</span>') + this.time_range[1][0].getFullYear() + '年' + (this.time_range[1][0].getMonth() + 1) + '月' + this.time_range[1][0].getDate() +'日' + (this.time_type[1] === 'hourly'? new_range[1][0].getHours() + '时' : '') + '到' + this.time_range[1][1].getFullYear() + '年' + (this.time_range[1][1].getMonth() + 1) + '月' + this.time_range[1][1].getDate() +'日' + (this.time_type[1] === 'hourly'? new_range[1][1].getHours() + '时' : '') + '(P值为' + result['pvalue'].toFixed(2) + ')';
+                    }
+                    d3.select(this.result)
+                        .style('background-color', 'rgb(200, 200, 200)')
+                        .transition()
+                        .style('background-color', null);
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                    this.div.innerHTML = null;
+                }
+            }
+
+            static PollutionCorrelationClass = class PollutionCorrelation {
+                static type = '污染物相关性分析';
+                div;
+                time_range;
+                time_type;
+                time_range_span;
+                location;
+                location_span;
+                checkboxes = {'温度': undefined, '相对湿度': undefined, '地面气压': undefined, '纬向风速': undefined, '经向风速': undefined};
+                key_select;
+                confirm_button;
+                result;
+
+                constructor(div, time_range, time_type, location) {
+                    this.div = div;
+                    let D3_div = d3.select(div);
+
+                    this.time_range_span = D3_div.append('span').node();
+                    this.update_time_range(time_range, time_type);
+                    this.location_span = d3.select(div).append('span').node();
+                    this.update_location(location);
+                    div.append('对');
+                    for (let independent_variable in this.checkboxes) {
+                        this.checkboxes[independent_variable] = D3_div.append('input').attr('type', 'checkbox').node();
+                        div.append(independent_variable);
+                    }
+                    div.append('和');
+                    this.key_select = D3_div.append('select').node();
+                    for (let pollution of NumericalAnalysis.pollutions) {
+                        d3.select(this.key_select)
+                            .append('option')
+                            .attr('value', pollution[1])
+                            .html(pollution[0]);
+                    }
+                    div.append('进行污染物相关性计算：');
+                    let self = this;
+                    this.confirm_button = d3.select(div)
+                        .append('button')
+                        .style('background-color', 'transparent')
+                        .style('border-width', 1 + 'px')
+                        .html('确认')
+                        .on('click', function() {
+                            self.compute();
+                        })
+                        .on('mouseover', function() {
+                            this.style.backgroundColor = 'rgba(140, 140, 140, 0.5)';
+                            this.style.cursor = 'pointer';
+                        })
+                        .on('mouseout', function() {
+                            this.style.backgroundColor = 'transparent';
+                            this.style.cursor = 'default';
+                        })
+                        .node();
+                    this.result = D3_div.append('div').style('height', 100 + 'px').style('overflow-y', 'auto').node();
+                }
+
+                update_time_range(new_range, time_type) {
+                    this.time_range = new_range;
+                    this.time_type = time_type;
+                    this.time_range_span.innerHTML = '在' + this.time_range[0].getFullYear() + '年' + (this.time_range[0].getMonth() + 1) + '月' + this.time_range[0].getDate() +'日' + (time_type === 'hourly'? this.time_range[0].getHours() + '时' : '') + '到' + this.time_range[1].getFullYear() + '年' + (this.time_range[1].getMonth() + 1) + '月' + this.time_range[1].getDate() +'日' + (time_type === 'hourly'? this.time_range[1].getHours() + '时<br>' : '<br>');
+                }
+
+                update_location(location) {
+                    this.location = location;
+                    this.location_span.innerHTML = '在东经' + location['lon'] + '度, 北纬' + location['lat'] + '度<br>';
+                }
+
+                compute() {
+                    let keys = [];
+                    for (let checkbox in this.checkboxes) {
+                        if (this.checkboxes[checkbox].checked) {
+                            keys.push(checkbox);
+                        }
+                    }
+                    if (!keys.length) {
+                        alert('没有选择自变量');
+                    } else if (new Date(this.time_range[0].getFullYear(), (this.time_range[0].getMonth() + 1), this.time_range[0].getDate(), this.time_range[0].getHours()) < new Date(this.time_range[1].getFullYear(), (this.time_range[1].getMonth() + 1), this.time_range[1].getDate(), this.time_range[1].getHours())) {
+                        let extended_key_pairs = JSON.parse(JSON.stringify(key_pairs));
+                        extended_key_pairs['纬向风速'] = 'U';
+                        extended_key_pairs['经向风速'] = 'V';
+                        let self = this;
+                        NumericalAnalysis.BackEndAPI.liner_regression(this.location['lat'], this.location['lon'], keys.map(x => extended_key_pairs[x]).join('-'), this.key_select.value, this.time_range[0].getFullYear().toString(), ('0' + (this.time_range[0].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[0].getDate().toString()).slice(-2), ('0' + this.time_range[0].getHours().toString()).slice(-2), this.time_range[1].getFullYear().toString(), ('0' + (this.time_range[1].getMonth() + 1).toString()).slice(-2), ('0' + this.time_range[1].getDate().toString()).slice(-2), ('0' + this.time_range[1].getHours().toString()).slice(-2), this.time_type, function(result) {self.update_result.bind(self)(result, keys);});
+                    } else {
+                        alert('时间范围无效');
+                    }
+                }
+
+                update_result(result, keys) {
+                    let effective = true;
+                    this.result.innerHTML = null;
+                    for (let i = 0; i < result["milt"].length; i++) {
+                        if (result["milt"][i] > 0.9) {
+                            this.result.innerHTML += keys[result["sym1"][i]] + '和' + keys[result["sym2"][j]] + '之间存在多重贡献性。' + '<br>';
+                            effective = false;
+                        }
+                    }
+                    if (effective) {
+                        let work = false;
+                        for (let i = 1; i < keys.length + 1; i++) {
+                            if (result['pvalues'][i] < 0.05 && (result['para'][i] < -0.01 || result['para'][i] > 0.01)) {
+                                work = true;
+                                this.result.append('• ' + keys[i - 1] + '与' + this.key_select.options[this.key_select.selectedIndex].text + '有明显');
+                                d3.select(this.result).append('span').html(result['para'][i] > 0? '正' : '负').style('color', (result['para'][i] > 0? 'Red' : 'Green'));
+                                this.result.append('相关性(P值为' + result['pvalues'][i].toFixed(2) + '，系数为' + result['para'][i].toFixed(2) + ')');
+                                d3.select(this.result).append('br');
+                            }
+                        }
+                        if (!work) {
+                            this.result.innerHTML = '不能得到明显结论';
+                        }
+                    } else {
+                        this.result.innerHTML += '分析结果不可靠，请调整自变量选择<br>';
+                    }
+                    d3.select(this.result)
+                        .style('background-color', 'rgb(200, 200, 200)')
+                        .transition()
+                        .style('background-color', null);
+                }
+
+                delete() {
+                    while (this.div.firstChild) {
+                        this.div.removeChild(this.div.lastChild);
+                    }
+                    this.div.innerHTML = null;
+                }
+            }
+
+            div;
+            current_analysis_type = NumericalAnalysis.PollutionStandardClass.type;
+
+            analysis_instances = {
+                [NumericalAnalysis.PollutionStandardClass.type]: undefined,
+                [NumericalAnalysis.PollutionComparisonClass.type]: undefined,
+                [NumericalAnalysis.PollutionImprovementClass.type]: undefined,
+                [NumericalAnalysis.PollutionCorrelationClass.type]: undefined
+            }
+
+            constructor(div) {
+                this.div = div;
+
+                let select = d3.select(div).append('select')
+                    .style('background-color', 'transparent')
+                    .style('font-size', 20 + 'px')
+                    .style('border', 'none');
+                for (let type of Object.keys(this.analysis_instances)) {
+                    select.append('option')
+                        .attr('value', type)
+                        .html(type);
+                }
+
+                let self = this;
+
+                select.on('change', function() {
+                    self.analysis_instances[self.current_analysis_type].delete();
+
+                    switch (this.value) {
+                        case NumericalAnalysis.PollutionStandardClass.type:
+                            self.analysis_instances[NumericalAnalysis.PollutionStandardClass.type] = new NumericalAnalysis.PollutionStandardClass(main_div.node(), [new Date(2013, 0, 1), new Date(2018, 0, 1)], 'daily', {lon: 116.38, lat: 39.97});
+                            break;
+                        case NumericalAnalysis.PollutionComparisonClass.type:
+                            self.analysis_instances[NumericalAnalysis.PollutionComparisonClass.type] = new NumericalAnalysis.PollutionComparisonClass(main_div.node(), [new Date(2013, 0, 1), new Date(2018, 0, 1)], 'daily', [{lon: 116.38, lat: 39.97}, {lon: 116.38, lat: 39.97}]);
+                            break;
+                        case NumericalAnalysis.PollutionImprovementClass.type:
+                            self.analysis_instances[NumericalAnalysis.PollutionImprovementClass.type] = new NumericalAnalysis.PollutionImprovementClass(main_div.node(), [[new Date(2013, 0, 1), new Date(2013, 11, 31)], [new Date(2018, 0, 1), new Date(2018, 11, 31)]], ['daily', 'daily'], {lon: 116.38, lat: 39.97});
+                            break;
+                        case NumericalAnalysis.PollutionCorrelationClass.type:
+                            self.analysis_instances[NumericalAnalysis.PollutionCorrelationClass.type] = new NumericalAnalysis.PollutionCorrelationClass(main_div.node(), [new Date(2013, 0, 1), new Date(2018, 0, 1)], 'daily', {lon: 116.38, lat: 39.97});
+                            break;
+                    }
+
+                    self.current_analysis_type = this.value;
+                });
+
+                let main_div = d3.select(div).append('div')
+                    .style('position', 'absolute')
+                    .style('top', 40 + 'px')
+                    .style('width', 550 + 'px');
+                this.analysis_instances[NumericalAnalysis.PollutionStandardClass.type] = new NumericalAnalysis.PollutionStandardClass(main_div.node(), [new Date(2013, 0, 1), new Date(2018, 0, 1)], 'daily', {lon: 116.38, lat: 39.97}, 'PM2.5');
+            }
+
+            update_time_range(new_range, time_type) {
+                if (this.analysis_instances[this.current_analysis_type].update_time_range) {
+                    this.analysis_instances[this.current_analysis_type].update_time_range(new_range, time_type);
+                }
+            }
+
+            update_location(location) {
+                if (this.analysis_instances[this.current_analysis_type].update_location) {
+                    this.analysis_instances[this.current_analysis_type].update_location(location);
+                }
+            }
+
+            update_key(key) {
+                if (this.analysis_instances[this.current_analysis_type].update_key) {
+                    this.analysis_instances[this.current_analysis_type].update_key(key);
+                }
+            }
+
+            delete() {
+                while (this.div.firstChild) {
+                    this.div.removeChild(this.div.lastChild);
+                }
+            }
+        }
+
+        window.onload = function() {  // python -m http.server --bind localhost | http:/localhost:8000/index.html
+            let main_map_size = {width: 864, height: 636};
+            let main_map_div = d3.select('body').append('div')
+                .attr('class', 'main_map')
+                .style('width', main_map_size.width + 'px')
+                .style('height', main_map_size.height + 'px')
+                .style('border', '1px solid black');
+
+            let main_map;
+            let key_switch;
+            let time_line;
+            let current_time = {date:'2013010100', time_type:'daily'};
+            let current_key = 'TEMP';
+            let update_main_map = function(new_data) {
+                main_map.change_data(new_data, current_key);
+            }
+            
+            let draw_main_map = function(data) {
+                main_map = new MainMap(
+                    main_map_div.node(),
+                    main_map_size,
+                    [104, 38],  // 离北京最近的数据点 116.38, 39.97
+                    780,
+                    data,
+                    'TEMP',
+                    function(lon, lat) {
+                        numerical_analysis.update_location({lon: lon, lat: lat});
+                        analysis_graph.redraw_graph(lon,lat,AnalysisGraph.global_time_range);
+                        console.log('经度：' + lon + ' 纬度：' + lat);
+                    },
+                    'rgba(9, 159, 172, 0.5)'
+                );
+                let key_switch_callback = function(key) {
+                    console.log('新指标：' + key[1]);
+                    current_key = key[0];
+                    FetchDataByTimeAndCoordinates(current_time.time_type, current_time.date, 'lat-lon-' + current_key + '-U-V', update_main_map);
+                    numerical_analysis.update_key(key[1]);
+                    console.log('change finishes');
+                }
+                let switch_div = d3.select('body')
+                    .append('div')
+                    .style('position', 'absolute')
+                    .style('top', 100 + 'px');
+                key_switch = new KeySwitch(switch_div.node(), MainMap.font_size, 'TEMP', key_switch_callback);
+                let time_line_div = d3.select('body').append('div')
+                    .style('position', 'absolute')
+                    .style('top', main_map_size.height + 'px');
+                time_line = new TimeLine(
+                    time_line_div.node(),
+                    function(date, time_type) {
+                        current_time.time_type = time_type;
+                        current_time.date = date;
+                        FetchDataByTimeAndCoordinates(current_time.time_type, current_time.date, 'lat-lon-' + current_key + '-U-V', update_main_map);
+                        console.log('新时间点：' + date + ' 类型：' + time_type);
+                    },
+                    1500,
+                    function(new_range, time_type) {
+                        numerical_analysis.update_time_range(new_range, time_type);
+                        analysis_graph.redraw_graph(AnalysisGraph.lon,AnalysisGraph.lat,new_range);
+                        console.log('新时间范围：' + new_range + ' 类型：' + time_type);
+                    }
+                );
+            }
+            FetchDataByTimeAndCoordinates('daily', '2013010100', 'lat-lon-TEMP-U-V', draw_main_map);
+            
+            let numerical_analysis_div = d3.select('body').append('div')
+                .style('position', 'absolute')
+                .style('left', 920 + 'px')
+                .style('top', 440 + 'px');
+            let numerical_analysis = new NumericalAnalysis(numerical_analysis_div.node());
+            
+            let graph_div=d3.select("body").append("div")
+                         .attr("id","graph_div")
+                         .style("position","absolute")
+                         .style("top",10+"px")
+                         .style("left",880+"px")
+                         .style("width",530+"px")
+                         .style("height",400+"px");
+            analysis_graph=new AnalysisGraph(graph_div.node());
+        };
+    </script>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='../static/data/图标.svg') }}">
+  </head>
+  <body>
+  </body>
+</html>
